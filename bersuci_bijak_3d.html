@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BERSUCI BIJAK: MISI KENALI NAJIS</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Baloo 2', cursive;
+            background-color: #87CEEB; /* Fallback pastel blue */
+            touch-action: none; /* Prevent default pull-to-refresh on mobile */
+        }
+        
+        #glcanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Custom scrollbar for instructions */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #FFB7B2; 
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #FF9A8B; 
+        }
+
+        .btn-bouncy {
+            transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-bouncy:active {
+            transform: scale(0.95);
+        }
+
+        /* D-PAD Styles */
+        .d-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 5px;
+            width: 120px;
+            height: 120px;
+            opacity: 0.6;
+            transition: opacity 0.3s;
+        }
+        .d-pad:active {
+            opacity: 0.9;
+        }
+        .d-btn {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 20px;
+            color: #333;
+            user-select: none;
+        }
+        .d-btn:active {
+            background: #FFD3B6;
+        }
+        .d-up { grid-column: 2; grid-row: 1; }
+        .d-left { grid-column: 1; grid-row: 2; }
+        .d-right { grid-column: 3; grid-row: 2; }
+        .d-down { grid-column: 2; grid-row: 3; }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background-color: white;
+            border: 1px solid rgba(0,0,0,0.3);
+        }
+        #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
+        #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+
+        /* Modal Background Blur */
+        .glass-modal {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            border: 4px solid #fff;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Game Container -->
+    <div id="game-container" class="relative w-full h-screen">
+        
+        <!-- 3D Canvas -->
+        <canvas id="glcanvas"></canvas>
+
+        <!-- Crosshair -->
+        <div id="crosshair" class="hidden z-10"></div>
+
+        <!-- HUD (Heads Up Display) -->
+        <div id="hud" class="hidden absolute top-4 left-4 right-4 flex justify-between items-start z-10 pointer-events-none">
+            <div class="bg-white/90 px-4 py-2 rounded-2xl shadow-lg border-2 border-green-200">
+                <p class="text-lg font-bold text-green-600">Markah: <span id="score-display">0</span></p>
+            </div>
+            <div class="bg-white/90 px-4 py-2 rounded-2xl shadow-lg border-2 border-blue-200">
+                <p class="text-lg font-bold text-blue-600">Selesai: <span id="progress-display">0</span>/6</p>
+            </div>
+            <!-- Instruction Toast -->
+            <div class="absolute top-14 left-1/2 transform -translate-x-1/2 bg-yellow-100/90 border-2 border-yellow-300 px-4 py-2 rounded-xl shadow-md text-center max-w-sm">
+                <p id="hud-instruction" class="text-sm font-semibold text-yellow-700">Cari 6 objek bersinar!</p>
+            </div>
+        </div>
+
+        <!-- Mobile Controls (D-Pad) -->
+        <div id="mobile-controls" class="hidden absolute bottom-8 left-8 z-10">
+            <div class="d-pad">
+                <div class="d-btn d-up" id="btn-up">▲</div>
+                <div class="d-btn d-left" id="btn-left">◀</div>
+                <div class="d-btn d-right" id="btn-right">▶</div>
+                <div class="d-btn d-down" id="btn-down">▼</div>
+            </div>
+        </div>
+        
+        <!-- Interaction Button (Mobile) -->
+        <button id="btn-interact" class="hidden absolute bottom-12 right-12 z-10 w-20 h-20 bg-pink-400 text-white rounded-full shadow-lg font-bold text-lg border-4 border-white btn-bouncy active:bg-pink-500">
+            PILIH
+        </button>
+
+        <!-- UI Overlays -->
+        <div id="ui-layer" class="absolute inset-0 z-20 flex justify-center items-center pointer-events-none">
+            
+            <!-- MAIN MENU -->
+            <div id="menu-screen" class="glass-modal rounded-3xl p-8 max-w-md w-11/12 text-center pointer-events-auto transition-transform duration-300">
+                <h1 class="text-4xl font-extrabold text-pink-500 mb-2 drop-shadow-sm leading-tight">BERSUCI BIJAK</h1>
+                <h2 class="text-xl font-bold text-teal-600 mb-6">MISI KENALI NAJIS</h2>
+                
+                <div class="space-y-4">
+                    <button onclick="startGame()" class="btn-bouncy w-full bg-gradient-to-r from-green-400 to-emerald-500 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-green-600 hover:brightness-110">
+                        MULA BERSUCI!
+                    </button>
+                    <button onclick="showScreen('arahan-screen')" class="btn-bouncy w-full bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-blue-600 hover:brightness-110">
+                        ARAHAN
+                    </button>
+                    <button onclick="showScreen('settings-screen')" class="btn-bouncy w-full bg-gradient-to-r from-yellow-400 to-orange-400 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-yellow-600 hover:brightness-110">
+                        TETAPAN
+                    </button>
+                </div>
+            </div>
+
+            <!-- ARAHAN SCREEN -->
+            <div id="arahan-screen" class="hidden glass-modal rounded-3xl p-6 max-w-lg w-11/12 text-left pointer-events-auto max-h-[80vh] overflow-y-auto">
+                <h2 class="text-3xl font-extrabold text-blue-500 mb-4 text-center">ARAHAN</h2>
+                <div class="text-gray-700 space-y-3 mb-6 bg-white p-4 rounded-xl border border-blue-100">
+                    <p><strong>Misi:</strong> Cari 6 objek bersinar di dalam taman.</p>
+                    <p><strong>Kawalan:</strong><br>
+                    💻 Komputer: Guna W,A,S,D (Gerak) & Mouse (Lihat). Klik pada objek.<br>
+                    📱 Telefon: Guna butang arah (Gerak) & Leret skrin (Lihat). Tekan butang PILIH apabila dekat.</p>
+                    <hr class="border-blue-100">
+                    <p class="font-bold text-center text-lg">Jenis-jenis Najis:</p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><span class="font-bold text-pink-500">Mukhaffafah (Ringan):</span> Air kencing bayi lelaki kurang 2 tahun yang hanya minum susu ibu.</li>
+                        <li><span class="font-bold text-orange-500">Mutawassitah (Sederhana):</span> Darah, air kencing manusia, nanah, najis haiwan (selain anjing/babi).</li>
+                        <li><span class="font-bold text-red-600">Mughallazah (Berat):</span> Anjing dan babi serta benda yang berkaitan dengannya (air liur, peluh, tapak kaki).</li>
+                    </ul>
+                </div>
+                <button onclick="showScreen('menu-screen')" class="btn-bouncy w-full bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-gray-300 hover:bg-gray-300">
+                    KEMBALI
+                </button>
+            </div>
+
+            <!-- SETTINGS SCREEN -->
+            <div id="settings-screen" class="hidden glass-modal rounded-3xl p-6 max-w-sm w-11/12 text-center pointer-events-auto">
+                <h2 class="text-3xl font-extrabold text-yellow-500 mb-6">TETAPAN</h2>
+                <div class="space-y-4 mb-6">
+                    <button onclick="toggleAudio()" id="btn-audio" class="btn-bouncy w-full bg-indigo-400 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-lg border-b-4 border-indigo-600">
+                        BUNYI: ON
+                    </button>
+                    <button onclick="toggleFullscreen()" class="btn-bouncy w-full bg-teal-400 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-lg border-b-4 border-teal-600">
+                        SKRIN PENUH
+                    </button>
+                </div>
+                <button onclick="showScreen('menu-screen')" class="btn-bouncy w-full bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-gray-300 hover:bg-gray-300">
+                    KEMBALI
+                </button>
+            </div>
+
+            <!-- QUIZ MODAL -->
+            <div id="quiz-screen" class="hidden glass-modal rounded-3xl p-6 max-w-md w-11/12 text-center pointer-events-auto border-4 border-pink-300">
+                <div class="bg-pink-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-2 text-3xl shadow-inner">
+                    ❓
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-4" id="quiz-question">Situasi...</h3>
+                <div class="space-y-3">
+                    <button onclick="answerQuiz('Mukhaffafah')" class="btn-bouncy w-full bg-pink-400 text-white font-bold py-3 px-4 rounded-2xl shadow border-b-4 border-pink-600 text-lg">
+                        MUKHAFFAFAH
+                    </button>
+                    <button onclick="answerQuiz('Mutawassitah')" class="btn-bouncy w-full bg-orange-400 text-white font-bold py-3 px-4 rounded-2xl shadow border-b-4 border-orange-600 text-lg">
+                        MUTAWASSITAH
+                    </button>
+                    <button onclick="answerQuiz('Mughallazah')" class="btn-bouncy w-full bg-red-500 text-white font-bold py-3 px-4 rounded-2xl shadow border-b-4 border-red-700 text-lg">
+                        MUGHALLAZAH
+                    </button>
+                </div>
+            </div>
+
+            <!-- RESULT MESSAGE OVERLAY -->
+            <div id="result-screen" class="hidden glass-modal rounded-3xl p-6 max-w-sm w-11/12 text-center pointer-events-auto">
+                <div id="result-icon" class="text-6xl mb-2">✅</div>
+                <h3 id="result-title" class="text-2xl font-extrabold mb-2">TAHNIAH!</h3>
+                <p id="result-desc" class="text-gray-700 font-semibold mb-4 text-lg">Jawapan Tepat! +10 Markah</p>
+                <button onclick="resumeGame()" class="btn-bouncy w-full bg-green-400 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-green-600 hover:brightness-110">
+                    TERUSKAN
+                </button>
+            </div>
+
+            <!-- GAME OVER SCREEN -->
+            <div id="gameover-screen" class="hidden glass-modal rounded-3xl p-8 max-w-md w-11/12 text-center pointer-events-auto">
+                <h2 class="text-4xl font-extrabold text-blue-600 mb-2">ALHAMDULILLAH!</h2>
+                <p class="text-lg text-gray-600 mb-4 font-bold">Misi Selesai.</p>
+                
+                <div class="bg-blue-50 rounded-2xl p-4 mb-6 border-2 border-blue-200">
+                    <p class="text-gray-700 mb-1">Markah Keseluruhan:</p>
+                    <p class="text-5xl font-extrabold text-blue-500" id="final-score">60</p>
+                </div>
+
+                <button onclick="resetGame()" class="btn-bouncy w-full bg-gradient-to-r from-pink-400 to-rose-400 text-white font-bold py-3 px-6 rounded-2xl shadow-md text-xl border-b-4 border-pink-600 hover:brightness-110">
+                    MAIN SEMULA
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- GAME DATA & STATE ---
+        const questionPool = [
+            { id: 1, text: "Air kencing bayi lelaki berumur kurang 2 tahun yang hanya minum susu ibu.", correct: "Mukhaffafah", exp: "Ini adalah najis ringan (Mukhaffafah)." },
+            { id: 2, text: "Kesan darah yang banyak pada pakaian sekolah.", correct: "Mutawassitah", exp: "Darah dikategorikan sebagai najis sederhana (Mutawassitah)." },
+            { id: 3, text: "Tahi kucing yang dijumpai di kawasan taman permainan.", correct: "Mutawassitah", exp: "Najis haiwan selain anjing/babi adalah najis Mutawassitah." },
+            { id: 4, text: "Jejak tapak kaki anjing yang basah melintasi lantai.", correct: "Mughallazah", exp: "Anjing dan segala yang berkaitan dengannya adalah najis berat (Mughallazah)." },
+            { id: 5, text: "Air kencing manusia dewasa di tandas yang tidak dibilas.", correct: "Mutawassitah", exp: "Air kencing manusia adalah najis sederhana (Mutawassitah)." },
+            { id: 6, text: "Kesan air liur babi pada bekas makanan.", correct: "Mughallazah", exp: "Babi dan air liurnya adalah najis berat (Mughallazah)." }
+        ];
+
+        let availableQuestions = [...questionPool];
+        let currentQuestion = null;
+        let activeInteractable = null;
+
+        let state = {
+            status: 'MENU', // MENU, PLAYING, QUIZ, RESULT, END
+            score: 0,
+            found: 0,
+            audioEnabled: true,
+            isTouchDevice: 'ontouchstart' in window || navigator.maxTouchPoints > 0
+        };
+
+        // --- AUDIO SYNTHESIS ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (!state.audioEnabled) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'correct') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, now); // C5
+                osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            } else if (type === 'wrong') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.3);
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } else if (type === 'pop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.1, now + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            }
+        }
+
+        // --- UI MANAGEMENT ---
+        function showScreen(screenId) {
+            const screens = ['menu-screen', 'arahan-screen', 'settings-screen', 'quiz-screen', 'result-screen', 'gameover-screen'];
+            screens.forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            if (screenId) {
+                document.getElementById(screenId).classList.remove('hidden');
+            }
+            playSound('pop');
+        }
+
+        function toggleAudio() {
+            state.audioEnabled = !state.audioEnabled;
+            document.getElementById('btn-audio').innerText = state.audioEnabled ? "BUNYI: ON" : "BUNYI: OFF";
+            document.getElementById('btn-audio').classList.toggle('bg-indigo-400');
+            document.getElementById('btn-audio').classList.toggle('bg-gray-400');
+            playSound('pop');
+        }
+
+        function toggleFullscreen() {
+            playSound('pop');
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error full-screen: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // --- THREE.JS SETUP ---
+        const canvas = document.getElementById('glcanvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xBAE1FF); // Pastel Blue Sky
+        scene.fog = new THREE.Fog(0xBAE1FF, 10, 60);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        // World Objects
+        const interactables = [];
+        let time = 0; // For animations
+
+        function createWorld() {
+            // Ground
+            const groundGeo = new THREE.PlaneGeometry(100, 100);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0xB5EAD7 }); // Pastel Green
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+
+            // Fences (Boundaries)
+            const fenceMat = new THREE.MeshLambertMaterial({ color: 0xFFDAC1 }); // Pastel Peach
+            const wallGeo = new THREE.BoxGeometry(100, 5, 2);
+            
+            const wall1 = new THREE.Mesh(wallGeo, fenceMat);
+            wall1.position.set(0, 2.5, -49);
+            scene.add(wall1);
+            
+            const wall2 = new THREE.Mesh(wallGeo, fenceMat);
+            wall2.position.set(0, 2.5, 49);
+            scene.add(wall2);
+            
+            const wall3 = new THREE.Mesh(wallGeo, fenceMat);
+            wall3.rotation.y = Math.PI / 2;
+            wall3.position.set(-49, 2.5, 0);
+            scene.add(wall3);
+            
+            const wall4 = new THREE.Mesh(wallGeo, fenceMat);
+            wall4.rotation.y = Math.PI / 2;
+            wall4.position.set(49, 2.5, 0);
+            scene.add(wall4);
+
+            // Decorative Trees
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0xE2C2A4 });
+            const leafMat = new THREE.MeshLambertMaterial({ color: 0xA0E8AF });
+            
+            const treePositions = [
+                [-20, -30], [25, -25], [-35, 10], [30, 20], [-15, 35], [40, -10],
+                [-40, -40], [40, 40], [-40, 40], [10, -45], [-10, 45]
+            ];
+
+            treePositions.forEach(pos => {
+                const group = new THREE.Group();
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 3), trunkMat);
+                trunk.position.y = 1.5;
+                const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 0), leafMat);
+                leaves.position.y = 4;
+                group.add(trunk);
+                group.add(leaves);
+                group.position.set(pos[0], 0, pos[1]);
+                // Random scale variation
+                const scale = 0.8 + Math.random() * 0.5;
+                group.scale.set(scale, scale, scale);
+                scene.add(group);
+            });
+
+            // Interactable Targets (Cubes/Stars)
+            const targetMat = new THREE.MeshLambertMaterial({ 
+                color: 0xFFB7B2, 
+                emissive: 0xFF9A8B,
+                emissiveIntensity: 0.5
+            });
+            const targetGeo = new THREE.OctahedronGeometry(1, 0);
+            
+            const targetPositions = [
+                [0, -20], [-25, 0], [25, 5], [-10, 25], [15, -15], [5, 35]
+            ];
+
+            targetPositions.forEach((pos, idx) => {
+                const mesh = new THREE.Mesh(targetGeo, targetMat);
+                mesh.position.set(pos[0], 1.5, pos[1]);
+                mesh.userData = { isTarget: true, id: idx };
+                scene.add(mesh);
+                interactables.push(mesh);
+            });
+        }
+        createWorld();
+
+        // --- PLAYER CONTROLLER ---
+        const player = new THREE.Object3D();
+        player.position.set(0, 2, 0);
+        scene.add(player);
+        player.add(camera);
+        
+        let pitch = 0;
+        let yaw = 0;
+        const moveSpeed = 15;
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+
+        // Keyboard inputs
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+        
+        document.addEventListener('keydown', (e) => {
+            if (state.status !== 'PLAYING') return;
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
+        });
+
+        // Mobile D-Pad inputs
+        const setupDpad = (id, keyName) => {
+            const el = document.getElementById(id);
+            const press = (e) => { e.preventDefault(); if(state.status === 'PLAYING') keys[keyName] = true; };
+            const release = (e) => { e.preventDefault(); keys[keyName] = false; };
+            el.addEventListener('touchstart', press, {passive: false});
+            el.addEventListener('touchend', release, {passive: false});
+            el.addEventListener('mousedown', press);
+            el.addEventListener('mouseup', release);
+            el.addEventListener('mouseleave', release);
+        };
+        setupDpad('btn-up', 'w');
+        setupDpad('btn-down', 's');
+        setupDpad('btn-left', 'a');
+        setupDpad('btn-right', 'd');
+
+        // Look Controls (Touch/Mouse Drag)
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const lookSensitivity = 0.003;
+
+        // Pointer Lock for Desktop (Optional but good for WebGL)
+        let isLocked = false;
+        canvas.addEventListener('click', () => {
+            if (state.status === 'PLAYING' && !state.isTouchDevice) {
+                canvas.requestPointerLock();
+            }
+        });
+        document.addEventListener('pointerlockchange', () => {
+            isLocked = document.pointerLockElement === canvas;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (state.status !== 'PLAYING' || isLocked) return;
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        document.addEventListener('mouseup', () => { isDragging = false; });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (state.status !== 'PLAYING') return;
+            
+            let movementX = 0;
+            let movementY = 0;
+
+            if (isLocked) {
+                movementX = e.movementX || 0;
+                movementY = e.movementY || 0;
+            } else if (isDragging) {
+                movementX = e.clientX - previousMousePosition.x;
+                movementY = e.clientY - previousMousePosition.y;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            } else {
+                return;
+            }
+
+            yaw -= movementX * lookSensitivity;
+            pitch -= movementY * lookSensitivity;
+            pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+            
+            camera.rotation.set(pitch, 0, 0);
+            player.rotation.set(0, yaw, 0);
+        });
+
+        // Touch Look
+        let touchStart = { x: 0, y: 0 };
+        canvas.addEventListener('touchstart', (e) => {
+            if (state.status !== 'PLAYING') return;
+            // Only look around if touching right side of screen, or if it's the only touch
+            const touch = e.touches[0];
+            if (e.touches.length === 1 || touch.clientX > window.innerWidth / 2) {
+                touchStart = { x: touch.clientX, y: touch.clientY };
+            }
+        }, {passive: false});
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (state.status !== 'PLAYING') return;
+            e.preventDefault(); // prevent scrolling
+            
+            // Find a touch that is likely meant for looking
+            let lookTouch = null;
+            for(let i=0; i<e.touches.length; i++) {
+                if (e.touches[i].clientX > window.innerWidth / 2 || e.touches.length === 1) {
+                    lookTouch = e.touches[i];
+                    break;
+                }
+            }
+
+            if (lookTouch) {
+                const movementX = lookTouch.clientX - touchStart.x;
+                const movementY = lookTouch.clientY - touchStart.y;
+                touchStart = { x: lookTouch.clientX, y: lookTouch.clientY };
+
+                yaw -= movementX * lookSensitivity * 1.5;
+                pitch -= movementY * lookSensitivity * 1.5;
+                pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+                
+                camera.rotation.set(pitch, 0, 0);
+                player.rotation.set(0, yaw, 0);
+            }
+        }, {passive: false});
+
+        // --- GAME LOGIC ---
+        
+        function startGame() {
+            state.status = 'PLAYING';
+            showScreen(null);
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('crosshair').classList.remove('hidden');
+            
+            if (state.isTouchDevice) {
+                document.getElementById('mobile-controls').classList.remove('hidden');
+                document.getElementById('btn-interact').classList.remove('hidden');
+            }
+            
+            // First time setup check audio
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            resetInstructions();
+        }
+
+        function resetInstructions() {
+            const inst = document.getElementById('hud-instruction');
+            inst.innerHTML = "Cari " + (6 - state.found) + " objek bersinar!";
+            inst.parentElement.classList.remove('hidden');
+            setTimeout(() => {
+                inst.parentElement.classList.add('hidden');
+            }, 4000);
+        }
+
+        function updateHUD() {
+            document.getElementById('score-display').innerText = state.score;
+            document.getElementById('progress-display').innerText = state.found;
+        }
+
+        function resetGame() {
+            state.score = 0;
+            state.found = 0;
+            availableQuestions = [...questionPool];
+            updateHUD();
+            
+            // Respawn items
+            interactables.forEach(mesh => {
+                mesh.visible = true;
+            });
+            
+            // Reset player position
+            player.position.set(0, 2, 0);
+            yaw = 0; pitch = 0;
+            player.rotation.set(0,0,0);
+            camera.rotation.set(0,0,0);
+            
+            startGame();
+        }
+
+        // Raycasting for Interaction
+        const raycaster = new THREE.Raycaster();
+        const center = new THREE.Vector2(0, 0);
+
+        function checkInteraction() {
+            if (state.status !== 'PLAYING') return;
+            
+            raycaster.setFromCamera(center, camera);
+            const intersects = raycaster.intersectObjects(interactables);
+            
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                if (object.visible && player.position.distanceTo(object.position) < 12) {
+                    triggerQuiz(object);
+                } else if (object.visible && player.position.distanceTo(object.position) >= 12) {
+                    // Too far hint
+                    const inst = document.getElementById('hud-instruction');
+                    inst.innerHTML = "Pergi lebih dekat!";
+                    inst.parentElement.classList.remove('hidden');
+                    setTimeout(() => inst.parentElement.classList.add('hidden'), 2000);
+                }
+            }
+        }
+
+        // Desktop Click Interaction
+        canvas.addEventListener('click', () => {
+            if (isLocked) checkInteraction();
+        });
+        
+        // Mobile Button Interaction
+        document.getElementById('btn-interact').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            checkInteraction();
+        }, {passive: false});
+
+        function triggerQuiz(object) {
+            state.status = 'QUIZ';
+            activeInteractable = object;
+            
+            // Exit pointer lock if needed
+            if (document.pointerLockElement) document.exitPointerLock();
+
+            // Hide HUD elements slightly
+            document.getElementById('crosshair').classList.add('hidden');
+            if (state.isTouchDevice) {
+                document.getElementById('mobile-controls').classList.add('hidden');
+                document.getElementById('btn-interact').classList.add('hidden');
+            }
+
+            // Select random question
+            const qIndex = Math.floor(Math.random() * availableQuestions.length);
+            currentQuestion = availableQuestions[qIndex];
+            
+            document.getElementById('quiz-question').innerText = currentQuestion.text;
+            showScreen('quiz-screen');
+            playSound('pop');
+        }
+
+        function answerQuiz(selectedAnswer) {
+            showScreen('result-screen');
+            const title = document.getElementById('result-title');
+            const desc = document.getElementById('result-desc');
+            const icon = document.getElementById('result-icon');
+            
+            if (selectedAnswer === currentQuestion.correct) {
+                playSound('correct');
+                title.innerText = "TAHNIAH!";
+                title.className = "text-2xl font-extrabold mb-2 text-green-600";
+                desc.innerText = "Jawapan Tepat! +10 Markah\n" + currentQuestion.exp;
+                icon.innerText = "🌟";
+                state.score += 10;
+            } else {
+                playSound('wrong');
+                title.innerText = "KURANG TEPAT";
+                title.className = "text-2xl font-extrabold mb-2 text-red-500";
+                desc.innerText = `Jawapan sebenar: ${currentQuestion.correct}\n${currentQuestion.exp}`;
+                icon.innerText = "💡";
+            }
+            
+            // Remove question from pool
+            availableQuestions = availableQuestions.filter(q => q.id !== currentQuestion.id);
+            
+            // Hide object
+            activeInteractable.visible = false;
+            state.found += 1;
+            
+            updateHUD();
+        }
+
+        function resumeGame() {
+            if (state.found >= 6) {
+                // Game Over
+                state.status = 'END';
+                document.getElementById('final-score').innerText = state.score;
+                showScreen('gameover-screen');
+                playSound('correct');
+                document.getElementById('hud').classList.add('hidden');
+            } else {
+                // Back to game
+                state.status = 'PLAYING';
+                showScreen(null);
+                document.getElementById('crosshair').classList.remove('hidden');
+                if (state.isTouchDevice) {
+                    document.getElementById('mobile-controls').classList.remove('hidden');
+                    document.getElementById('btn-interact').classList.remove('hidden');
+                }
+                resetInstructions();
+            }
+        }
+
+        // --- RENDER LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            time += dt;
+
+            // Animate Interactables
+            interactables.forEach(mesh => {
+                if(mesh.visible) {
+                    mesh.rotation.y += 1.5 * dt;
+                    mesh.position.y = 1.5 + Math.sin(time * 3 + mesh.userData.id) * 0.3;
+                }
+            });
+
+            // Movement Logic
+            if (state.status === 'PLAYING') {
+                // Determine movement intent
+                direction.z = Number(keys.w || keys.ArrowUp) - Number(keys.s || keys.ArrowDown);
+                direction.x = Number(keys.d || keys.ArrowRight) - Number(keys.a || keys.ArrowLeft);
+                direction.normalize();
+
+                // Apply current camera rotation (yaw) to movement direction
+                if (direction.lengthSq() > 0) {
+                    // Move in look direction
+                    const moveAngle = Math.atan2(direction.x, direction.z);
+                    const finalAngle = yaw + moveAngle;
+                    
+                    velocity.x = Math.sin(finalAngle) * moveSpeed;
+                    velocity.z = Math.cos(finalAngle) * moveSpeed;
+                } else {
+                    velocity.x = 0;
+                    velocity.z = 0;
+                }
+
+                // Apply velocity
+                player.position.x -= velocity.x * dt;
+                player.position.z -= velocity.z * dt;
+
+                // Simple Boundary Collision (Radius 48)
+                if (player.position.x > 48) player.position.x = 48;
+                if (player.position.x < -48) player.position.x = -48;
+                if (player.position.z > 48) player.position.z = 48;
+                if (player.position.z < -48) player.position.z = -48;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize UI
+        showScreen('menu-screen');
+        
+        // Start Loop
+        window.onload = () => {
+            animate();
+        };
+
+    </script>
+</body>
+</html>
